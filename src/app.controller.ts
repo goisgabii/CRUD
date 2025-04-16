@@ -1,8 +1,16 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
-import { Delete } from '@nestjs/common';
-import { ZodValidationPipe } from './pipe/zod-validation-pipe';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Put,
+} from '@nestjs/common';
 import { z } from 'zod';
-
+import { ZodValidationPipe } from './pipe/zod-validation-pipe';
 
 function isValidCPF(cpf: string): boolean {
   cpf = cpf.replace(/[^\d]+/g, '');
@@ -22,64 +30,115 @@ function isValidCPF(cpf: string): boolean {
   return rev === +cpf.charAt(10);
 }
 
+let products: CreateProductBodySchema[] = [];
+
 const createProductBodySchema = z.object({
+  id: z.string(),
   name: z.string().min(1),
   model: z.string().min(1),
   dateManufacture: z.string().date(),
-  year: z.number().int(),
+  year: z.number(),
   brand: z.string().min(1),
-  cpf: z.string()
-    .regex(/^\d{11}$/,{
-      message: 'CPF deve conter exatamente 11 digitos númericos'
-  })
-    .refine(isValidCPF, {
-      message: "CPF Invalid"
+  email: z.string().email(),
+  cpf: z
+    .string()
+    .regex(/^\d{11}$/, {
+      message: 'CPF deve conter exatamente 11 dígitos numéricos.',
     })
-  
+    .refine(isValidCPF, {
+      message: 'CPF Invalid',
+    }),
 });
 
 const bodyValidationPipe = new ZodValidationPipe(createProductBodySchema);
 
-type createProductBodySchema = z.infer<typeof createProductBodySchema>;
+type CreateProductBodySchema = z.infer<typeof createProductBodySchema>;
+
+const updateProductBodySchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  dateManufacture: z.string().date().optional(),
+  year: z.number().optional(),
+  brand: z.string().min(1).optional(),
+  email: z.string().email().optional(),
+  cpf: z
+    .string()
+    .regex(/^\d{11}$/, {
+      message: 'CPF deve conter exatamente 11 dígitos numéricos.',
+    })
+    .refine(isValidCPF, {
+      message: 'CPF Invalid',
+    })
+    .optional(),
+});
+
+const updateBodyValidationPipe = new ZodValidationPipe(updateProductBodySchema);
+
+type UpdateProductBodySchema = z.infer<typeof updateProductBodySchema>;
 
 @Controller('/products')
 export class AppController {
-  private products: createProductBodySchema[] = [];
   constructor() {}
 
+  @Get()
+  @HttpCode(200)
+  getAllProducts() {
+    return products;
+  }
+
   @Post()
-  createProduct(@Body(bodyValidationPipe) body: createProductBodySchema): string {
-    this.products.push(body);
-    return `Product ${body.name} created successfully!`;
+  @HttpCode(201)
+  create(@Body(bodyValidationPipe) body: CreateProductBodySchema) {
+    products.push(body);
+  }
+
+  @Delete(':id')
+  @HttpCode(200)
+  delete(@Param('id') id: string) {
+    products = products.filter((product) => product.id !== id);
+  }
+
+  @Put(':id')
+  updatePut(
+    @Param('id') idUrl: string,
+    @Body(bodyValidationPipe) body: CreateProductBodySchema,
+  ) {
+    const { id, brand, cpf, dateManufacture, email, model, name, year } = body;
+
+    const listWithoutOldProduct = products.filter(
+      (product) => product.id !== id,
+    );
+
+    const oldProduct = products.filter((product) => product.id === idUrl);
+
+    const newProduct = oldProduct[0];
+
+    newProduct.id = id;
+    newProduct.brand = brand;
+    newProduct.cpf = cpf;
+    newProduct.dateManufacture = dateManufacture;
+    newProduct.email = email;
+    newProduct.model = model;
+    newProduct.name = name;
+    newProduct.year = year;
+
+    listWithoutOldProduct.push(newProduct);
+  }
+
+  @Patch(':id')
+  @HttpCode(200)
+  updatePatch(
+    @Param('id') idUrl: string,
+    @Body(updateBodyValidationPipe) body: UpdateProductBodySchema,
+  ) {
+    const productIndex = products.findIndex((product) => product.id === idUrl);
+
+    const updatedProduct = {
+      ...products[productIndex],
+      ...body,
+    };
+
+    products[productIndex] = updatedProduct;
   }
-
-@Get()
-getAllProducts(): createProductBodySchema[] {
-  return this.products;
-}
-
-
-@Put('/:id')
-updateProduct(
-  @Param('id',ParseIntPipe) id: number,
-  @Body(bodyValidationPipe) body: createProductBodySchema,
-): string {
-  const product= this.products[id];
-  if (!product) {
-    return 'Product not found!';
-  }
-  this.products[id] = body;
-  return `Product ${body.name} updated successfully!`;
-
-}
-
-@Delete('/:id')
-deleteProduct(@Param('id',ParseIntPipe) id: number): string {
-  const product = this.products[id];
-  if (!product) {
-    return 'Product not found!';
-  }
-  this.products.splice(id, 1);
-  return `Product ${product.name} deleted successfully!`;
-  }
 }
